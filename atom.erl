@@ -19,7 +19,6 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
--include("ejabberd.hrl").
 -define(NS_ATOM, "http://www.w3.org/2005/Atom").
 -define(NS_XHTML, "http://www.w3.org/1999/xhtml").
 
@@ -324,6 +323,6 @@ test_entry()->
 		Entry = binary_to_list(File),
 		E = xml_stream:parse_element(Entry),
 		check(E)
-	end, ["atom/tim.atom", "atom/sam.atom"]).
+	end, ["tim.atom", "sam.atom"]).
 
 -endif.
