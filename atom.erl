@@ -28,43 +28,61 @@
 check(El) ->
 	catch check1(El).
 
--define(CHECK_SIMPLE(Name, Parent),
-	check_child([{xmlelement, Name, Attributes, []}|Rest], Parent)-> 
-		Attributes,
-		check_child(Rest, Parent);
-	check_child([{xmlelement, Name, Attributes, [{xmlcdata, _}]}|Rest], Parent)-> 
-		Attributes,
-		check_child(Rest, Parent);
-	check_child([{xmlelement, Name, Attributes, SubEls}|_Rest], Parent)-> 
-		Attributes, SubEls, %For removing the warnings due to ?EL
+-define(CHECK_SIMPLE_1(Name, Parent),
+	check_child([{xmlelement, Name, _Attributes, []}|Rest], Parent, State)-> 
+		case proplists:get_value(Name, State) of 
+			undefined -> 
+				check_child(Rest, Parent, [{Name,found}|State]);
+			found -> {invalid, "Element "++ Name ++" has already been defined."}
+		end;
+	check_child([{xmlelement, Name, _Attributes, [{xmlcdata, _}]}|Rest], Parent, State)-> 
+		case proplists:get_value(Name, State) of 
+			undefined -> 
+				check_child(Rest, Parent, [{Name,found}|State]);
+			found -> {invalid, "Element "++ Name ++" has already been defined."}
+		end;
+	check_child([{xmlelement, Name, _Attributes, _SubEls}|_Rest], Parent, _State)-> 
+		{invalid, "No subelements allowed for " ++ Parent ++ "/" ++ Name};
+).
+-define(CHECK_SIMPLE_ANY(Name, Parent),
+	check_child([{xmlelement, Name, _Attributes, []}|Rest], Parent, State)-> 
+		check_child(Rest, Parent, State);
+	check_child([{xmlelement, Name, _Attributes, [{xmlcdata, _}]}|Rest], Parent, State)-> 
+		check_child(Rest, Parent, State);
+	check_child([{xmlelement, Name, _Attributes, _SubEls}|_Rest], Parent, _State)-> 
 		{invalid, "No subelements allowed for " ++ Parent ++ "/" ++ Name};
 ).
 
+
 -define(CHECK_CONTENT(Name, Parent),
-	check_child([{xmlelement, Name, Attributes, SubEls}|Rest], Parent)->
-		case xml:get_attr_s("type",Attributes) of
-			Type when Type == "text" orelse Type == "html" orelse Type == "" ->
-				case SubEls of
-					[{xmlcdata, _}] -> check_child(Rest, "entry");
-					_ -> {invalid, "Text element : No subelements allowed for " ++ Parent ++ "/" ++ Name}
+	check_child([{xmlelement, Name, Attributes, SubEls}|Rest], Parent, State)->
+		case proplists:get_value(Name, State) of 
+			undefined -> 
+				case xml:get_attr_s("type",Attributes) of
+					Type when Type == "text" orelse Type == "html" orelse Type == "" ->
+						case SubEls of
+							[{xmlcdata, _}] -> check_child(Rest, "entry", [{Name,found}|State]);
+							_ -> {invalid, "Text element : No subelements allowed for " ++ Parent ++ "/" ++ Name}
+						end;
+					"xhtml" ->
+						case SubEls of
+							[{xmlelement, "div",_,_}] -> check_child(Rest, "entry", [{Name,found}|State]);
+							_ -> {invalid, "div as only child element for " ++ Parent ++ "/" ++ Name}
+						end;
+					_ when Name == "content" ->
+						case xml:get_attr_s("src",Attributes) of
+							"" -> invalid;
+							_Uri when SubEls == []-> check_child(Rest, "entry", [{Name,found}|State]);
+							_ -> {invalid, "No src attribute " ++ Parent ++ "/" ++ Name}
+						end;
+					_ -> {invalid, "Wrong type for " ++ Parent ++ "/" ++ Name}
 				end;
-			"xhtml" ->
-				case SubEls of
-					[{xmlelement, "div",_,_}] -> check_child(Rest, "entry");
-					_ -> {invalid, "div as only child element for " ++ Parent ++ "/" ++ Name}
-				end;
-			_ when Name == "content" ->
-				case xml:get_attr_s("src",Attributes) of
-					"" -> invalid;
-					_Uri when SubEls == []-> check_child(Rest, "entry");
-					_ -> {invalid, "No src attribute " ++ Parent ++ "/" ++ Name}
-				end;
-			_ -> {invalid, "Wrong type for " ++ Parent ++ "/" ++ Name}
+			found -> {invalid, "Element "++ Name ++" has already been defined."}
 		end;
-	).
+).
 	
 -define(CHECK_REC(Name, Parent, Required),
-	check_child([{xmlelement, Name, _Attr, SubEls}|Rest], Parent)-> 
+	check_child([{xmlelement, Name, _Attr, SubEls}|Rest], Parent, State)-> 
 		case lists:foldl(
 			fun({xmlcdata,_}, Acc)->Acc;
 				({xmlelement, EName, _Attributes, _S}, Acc)->
@@ -74,8 +92,8 @@ check(El) ->
 				end
 			end, Required, SubEls) of
 			[] -> 
-				case check_child(SubEls, Name) of
-					valid -> check_child(Rest, Parent);
+				case check_child(SubEls, Name, State) of
+					valid -> check_child(Rest, Parent,State);
 					Error -> Error
 				end;
 			R -> {invalid, "Required elements for "++ Parent ++ "/" ++ Name ++" are missing : " ++ string:join(R, ",")}
@@ -84,9 +102,9 @@ check(El) ->
 
 
 -define(CHECK_ATTRS(Name, Parent, Required, Optional), 
-	check_child([{xmlelement, Name, Attributes, _SubEls}|Rest], Parent)->
+	check_child([{xmlelement, Name, Attributes, _SubEls}|Rest], Parent, State)->
 		case  check_attrs(Attributes, Required, Optional) of
-			ok -> check_child(Rest, Parent);
+			ok -> check_child(Rest, Parent, State);
 			{invalid, Msg} -> {invalid, "Invalid attributes for " ++ Parent ++ "/" ++ Name ++" : "++ Msg}
 		end;
 	).
@@ -102,7 +120,6 @@ check_attrs([{"xml:lang", _Value}|Rest], Required, Optional)->
 check_attrs([{"xmlns:"++_NS, _Value}|Rest], Required, Optional)->
 	check_attrs(Rest, Required, Optional);
 check_attrs([{Name, _Value}|Rest], Required, Optional)->
-	%%TODO : better way to check namespaces.
 	case lists:member($:, Name) of
 		true -> check_attrs(Rest, Required, Optional);
 		false ->
@@ -122,13 +139,13 @@ check1({xmlelement, "entry", _Attrs, Children}=El)->
 					(Fun, valid)-> Fun(El)
 				end, valid, [fun check_ns/1, fun check_mandatory_els/1, fun check_content_link/1] ),
 	case Res of
-		valid -> check_child(Children, "entry");
+		valid -> check_child(Children, "entry", []);
 		Error -> Error
 	end;
 
 check1([{xmlcdata,_ }|Rest])->
 	check1(Rest);
-check1([{xmlelement, "entry", _Attrs, Children}=El|Rest])->
+check1([{xmlelement, "entry", _Attrs, _Children}=El|_Rest])->
 	check1(El);
 check1(_)->
 	{invalid, "only one entry element allowed"}.
@@ -172,23 +189,22 @@ check_content_link({xmlelement, _Name, _Attributes, SubEls})->
 	end.
 			
 	
-check_child([], _Parent)->valid;
+check_child([], _Parent, _State)->valid;
 
 ?CHECK_CONTENT("title", "entry")
-?CHECK_CONTENT("subtitle", "entry")
 ?CHECK_CONTENT("content", "entry")
 ?CHECK_CONTENT("summary", "entry")
 ?CHECK_CONTENT("rights", "entry")
 
-?CHECK_SIMPLE("id", "entry")
-?CHECK_SIMPLE("updated", "entry")
-?CHECK_SIMPLE("published", "entry")
-?CHECK_SIMPLE("name", "author")
-?CHECK_SIMPLE("uri", "author")
-?CHECK_SIMPLE("email", "author")
-?CHECK_SIMPLE("name", "contributor")
-?CHECK_SIMPLE("uri", "contributor")
-?CHECK_SIMPLE("email", "contributor")
+?CHECK_SIMPLE_1("id", "entry")
+?CHECK_SIMPLE_1("updated", "entry")
+?CHECK_SIMPLE_1("published", "entry")
+?CHECK_SIMPLE_ANY("name", "author")
+?CHECK_SIMPLE_ANY("uri", "author")
+?CHECK_SIMPLE_ANY("email", "author")
+?CHECK_SIMPLE_ANY("name", "contributor")
+?CHECK_SIMPLE_ANY("uri", "contributor")
+?CHECK_SIMPLE_ANY("email", "contributor")
 
 ?CHECK_REC("author","entry", ["name"])
 ?CHECK_REC("contributor","entry", ["name"])
@@ -196,12 +212,11 @@ check_child([], _Parent)->valid;
 ?CHECK_ATTRS("link", "entry", ["href"], ["rel", "type", "hreflang", "length"])
 ?CHECK_ATTRS("category", "entry", ["term"], ["label", "scheme"])
 
-check_child([{xmlcdata,_SpacesOrLineFeeds}|Rest], Parent) -> check_child(Rest, Parent);
-%check_child([{xmlcdata,<<" ">>}|Rest], Parent) -> check_child(Rest, Parent);
+check_child([{xmlcdata,_SpacesOrLineFeeds}|Rest], Parent, State) -> check_child(Rest, Parent,State);
 %% Different namespace check here :
-check_child([{xmlelement, Name, Attrs, _Children}|Rest],Parent)->
+check_child([{xmlelement, Name, Attrs, _Children}|Rest],Parent, State)->
 	case xml:get_attr("xmlns",Attrs) of
-		{value, _NS} -> check_child(Rest, Parent);
+		{value, _NS} -> check_child(Rest, Parent,State);
 		_ -> {invalid, "Element " ++Parent ++"/"++ Name ++ " should not be here" }
 	end.
 
@@ -209,13 +224,21 @@ check_child([{xmlelement, Name, Attrs, _Children}|Rest],Parent)->
 -ifdef(TEST).
 top_level_simple_test()->
 	El = {xmlelement, "title", [], [{xmlcdata, <<"test">>}]},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry", []), valid).
 
 top_level_simple_fail_test()->
 	El = {xmlelement, "title", [], [{xmlelement, "rien", [],[]}]},
-	?assertEqual(check_child([El], "entry"), {invalid,
+	?assertEqual(check_child([El], "entry",[]), {invalid,
 	                   "Text element : No subelements allowed for entry/title"}).	
 
+too_many_titles_test()->
+	El = {xmlelement, "title", [], [{xmlelement, "rien", [],[]}]},
+	?assertEqual(check_child([El], "entry",[{"title", found}]), {invalid,
+	                   "Element title has already been defined."}).
+too_many_ids_test()->
+	El = {xmlelement, "id", [],  [{xmlcdata, <<"1">>}]},
+	?assertEqual(check_child([El], "entry",[{"id", found}]), {invalid,
+	                   "Element id has already been defined."}).
 atom_ns_fail_test()->
 	El = {xmlelement, "entry",[], []},
 	?assertEqual(check(El), {invalid,"Missing namespace for entry"}).
@@ -250,6 +273,8 @@ content_no_link_valid_test()->
 	 		{xmlelement, "author", [], [{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]}]}
 	 	]},
 	 	?assertEqual(check(El), valid).
+	
+
 too_many_content_fail_test()->
 	 El = {xmlelement, "entry",[{"xmlns", ?NS_ATOM}], [
 	 		{xmlelement, "id", [], [{xmlcdata, <<"1">>}]},
@@ -262,69 +287,69 @@ too_many_content_fail_test()->
 	
 different_ns_element_test()->
 	El = {xmlelement, "toto", [{"xmlns", "toto"}], []},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 
 wrong_element_test()->
 	El = {xmlelement, "toto", [], []},
-	?assertEqual(check_child([El], "entry"),  {invalid,"Element entry/toto should not be here"}).
+	?assertEqual(check_child([El], "entry",[]),  {invalid,"Element entry/toto should not be here"}).
 	
 attrs_link_valid_test()->
 	El = {xmlelement, "link", [{"href", "lkkj"}], []},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 	
 attrs_link_no_href_test()->
 	El = {xmlelement, "link", [{"rel", "alternate"}], []},
-	?assertEqual(check_child([El], "entry"),  {invalid,
+	?assertEqual(check_child([El], "entry",[]),  {invalid,
 	      "Invalid attributes for entry/link : Required attributes are missing : href"}).	
 
 attrs_link_bad_attrs_test()->
 	El = {xmlelement, "link", [{"sss", "alternate"}], []},
-	?assertEqual(check_child([El], "entry"),  {invalid,
+	?assertEqual(check_child([El], "entry",[]),  {invalid,
 	            "Invalid attributes for entry/link : Attribute sss should not be here "}).
 	
 attrs_ns_attrs_test()->
 	El = {xmlelement, "link", [{"href", "lkkj"},{"t:toto", "toto"}], []},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 
 rec_success_test()->
 	El = {xmlelement, "author", [], [
 			{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]},
 			{xmlelement, "email", [], [{xmlcdata, <<"test@example.com">>}]}]},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 
 rec_required_failed_test()->
 	El = {xmlelement, "author", [], [
 			{xmlelement, "email", [], [{xmlcdata, <<"test@example.com">>}]}]},
-	?assertEqual(check_child([El], "entry"), {invalid, "Required elements for entry/author are missing : name"}).
+	?assertEqual(check_child([El], "entry",[]), {invalid, "Required elements for entry/author are missing : name"}).
 
 rec_fail_test()->
 	El = {xmlelement, "author", [], [
 			{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]},
 			{xmlelement, "bademail", [], [{xmlcdata, <<"test@example.com">>}]}]},
-	?assertEqual(check_child([El], "entry"),  {invalid,"Element author/bademail should not be here"}).
+	?assertEqual(check_child([El], "entry",[]),  {invalid,"Element author/bademail should not be here"}).
 content_text_valid_test()->
 	El = {xmlelement, "content", [{"type", "text"}], [{xmlcdata, <<"toto">>}]},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 	
 content_nothing_valid_test()->
 	El = {xmlelement, "content", [], [{xmlcdata, <<"toto">>}]},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 %
 content_xhtml_valid_test()->
 	El = {xmlelement, "content", [{"type", "xhtml"}], [{xmlelement, "div", [],[]}]},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 	
 content_xhtml_fail_test()->
 	El = {xmlelement, "content", [{"type", "xhtml"}], [{xmlcdata, "ddsf"}]},
-	?assertEqual(check_child([El], "entry"), {invalid,"div as only child element for entry/content"}).
+	?assertEqual(check_child([El], "entry",[]), {invalid,"div as only child element for entry/content"}).
 	
 content_mime_valid_test()->
 	El = {xmlelement, "content", [{"type", "mime"},{"src", "http://www.google.com/"}], []},
-	?assertEqual(check_child([El], "entry"), valid).
+	?assertEqual(check_child([El], "entry",[]), valid).
 %
 content_mime_invalid_test()->
 	El = {xmlelement, "content", [{"type", "mime"},{"src", "http://www.google.com/"}], [{xmlcdata, "ddsf"}]},
-	?assertEqual(check_child([El], "entry"),  {invalid,"No src attribute entry/content"}).
+	?assertEqual(check_child([El], "entry",[]),  {invalid,"No src attribute entry/content"}).
 	
 	
 test_entry()->
@@ -333,6 +358,6 @@ test_entry()->
 		Entry = binary_to_list(File),
 		E = xml_stream:parse_element(Entry),
 		check(E)
-	end, ["atom/tim.atom", "atom/sam.atom"]).
+	end, ["tim.atom", "sam.atom"]).
 
 -endif.

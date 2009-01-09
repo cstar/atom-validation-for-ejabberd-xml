@@ -27,13 +27,15 @@ I have decided not to check for atom:author, even though the entry is not in a f
 
 Not everything is implemented yet. For instance :
 
- - No checking of maximum number of elements of the same type except for atom:content (the question mark in RNG)
+ - No checking of cardinality of atom:person elements
+
+ - dates are not validated
 
  - atom:source is weakly checked
 
  - better handle the namespacing
 
-
+Provide an extension hook for other namespace validations (Is anyone using atom bare these days)
 
 == Testing ==
 
