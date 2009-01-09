@@ -1,0 +1,35 @@
+= atom_ejabberd =
+
+This bit of code is designed to validate pubsub atom entry payload.
+
+== USAGE ==
+
+atom:check(Payload) returns valid | {invalid, first_error_message}
+
+Payload is an ejabberd xmlelement tuple.
+
+== Notes ==
+
+Will stop on first error.
+
+
+Initially I tried using an Atom XSD with XMErl but did not get the result I wanted (and converting to ejabberd xml terms to xmerl and back was not efficient)
+
+It only checks entries and not feeds.
+
+Namespaces should be handled well as long as atom itself is the base namespace. (no <atom:entry>)
+
+== TODO ==
+
+Not everything is implemented yet. For instance :
+
+ - No checking of maximum number of elements of the same type except for atom:content (the question mark in RNG)
+
+ - atom:source is weakly checked
+
+ - better handle the namespacing
+== Testing ==
+
+The EUnit unit tests should provide good coverage.
+
+sam.atom and tim.atom are sample entries from Sam Ruby and Tim Bray's atom feed. I used them for testing (check out atom:check_entry() )

@@ -1,0 +1,15 @@
+  <entry xmlns="http://www.w3.org/2005/Atom">
+    <id>tag:intertwingly.net,2004:2922</id>
+    <link href="/blog/2008/11/11/Native-JSON-parser"/>
+    <link rel="replies" href="2922.atom" thr:count="5" thr:updated="2008-11-15T21:20:07-05:00"/>
+    <title>Native JSON parser</title>
+<author><name>Sam</name></author>
+    <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><svg style="float:right" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100" height="102" viewBox="0 0 100 102">
+  <radialGradient id="jsongrad" cx="65" cy="90" r="100" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#EEF"/><stop offset="1"/></radialGradient>
+  <path d="M61,02 A 49,49 0,0,0 39,98 C 9,79 10,24 45,25 C 72,24 65,75 50,75 C 93,79 91,21 62,02" id="jsonswirl" fill="url(#jsongrad)"/>
+  <use xlink:href="#jsonswirl" transform="rotate(180 50,50)"/>
+</svg>
+<p><a href="http://blog.whatwg.org/this-week-in-html-5-episode-12"><cite>Mark Pilgrim</cite></a>: <em>HTML 5 will not ... <a href="http://lists.whatwg.org/pipermail/whatwg-whatwg.org/2008-July/015293.html">expose a native JSON parser for web content</a></em></p>
+<p>HTML 5 may not, but the plan is that <a href="http://wiki.ecmascript.org/lib/exe/fetch.php?id=es3.1%3Aes3.1_proposal_working_draft&amp;cache=cache&amp;media=es3.1:tc39-es31-draft07nov08.pdf">ECMAScript will</a> (section 15.12).  It is <a href="http://blogs.msdn.com/ie/archive/2008/09/10/native-json-in-ie8.aspx">already supported in IE8 beta 2</a>.  Firefox has <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=387522">landed support</a>, and is <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=340987">tracking it</a> as a part of an overall plan to <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=445494">support ES3.1</a>.</p></div></content>
+    <updated>2008-11-11T07:11:03-05:00</updated>
+  </entry>
