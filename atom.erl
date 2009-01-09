@@ -14,18 +14,19 @@
 
 -module(atom).
 -author('eric@ohmforce.com').
--export([check/1]).
+-export([check/1, check_attrs/3]).
+-compile(export_all).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+-include("ejabberd.hrl").
 -define(NS_ATOM, "http://www.w3.org/2005/Atom").
 -define(NS_XHTML, "http://www.w3.org/1999/xhtml").
 
 
 check(El) ->
 	catch check1(El).
-
 
 -define(CHECK_SIMPLE(Name, Parent),
 	check_child([{xmlelement, Name, Attributes, []}|Rest], Parent)-> 
@@ -123,8 +124,17 @@ check1({xmlelement, "entry", _Attrs, Children}=El)->
 	case Res of
 		valid -> check_child(Children, "entry");
 		Error -> Error
-	end.
+	end;
+
+check1([{xmlcdata,_ }|Rest])->
+	check1(Rest);
+check1([{xmlelement, "entry", _Attrs, Children}=El|Rest])->
+	check1(El);
+check1(_)->
+	{invalid, "only one entry element allowed"}.
 	
+
+
 check_ns(El)->
 	case xml:get_tag_attr_s("xmlns", El) of
 		?NS_ATOM -> valid;
@@ -138,7 +148,7 @@ check_mandatory_els({xmlelement, _Name, _Attributes, SubEls})->
 				true -> Acc -- [EName];
 				false -> Acc
 			end
-		end, ["id", "updated", "author"], SubEls) of
+		end, ["id", "updated"], SubEls) of
 		[] ->
 			valid;
 		R -> {invalid, "Required elements for entry are missing : " ++ string:join(R, ",")}
@@ -323,6 +333,6 @@ test_entry()->
 		Entry = binary_to_list(File),
 		E = xml_stream:parse_element(Entry),
 		check(E)
-	end, ["tim.atom", "sam.atom"]).
+	end, ["atom/tim.atom", "atom/sam.atom"]).
 
 -endif.

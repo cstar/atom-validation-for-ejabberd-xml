@@ -8,16 +8,20 @@ atom:check(Payload) returns valid | {invalid, first_error_message}
 
 Payload is an ejabberd xmlelement tuple.
 
+Also included is a node_atom enforcing atom.
+
+
 == Notes ==
-
-Will stop on first error.
-
 
 Initially I tried using an Atom XSD with XMErl but did not get the result I wanted (and converting to ejabberd xml terms to xmerl and back was not efficient)
 
 It only checks entries and not feeds.
 
 Namespaces should be handled well as long as atom itself is the base namespace. (no <atom:entry>)
+
+== A volontary step away from the atom spec ==
+
+I have decided not to check for atom:author, even though the entry is not in a feed, as  XMPP makes pretty clear who's actually publishing.
 
 == TODO ==
 
@@ -28,6 +32,9 @@ Not everything is implemented yet. For instance :
  - atom:source is weakly checked
 
  - better handle the namespacing
+
+
+
 == Testing ==
 
 The EUnit unit tests should provide good coverage.
