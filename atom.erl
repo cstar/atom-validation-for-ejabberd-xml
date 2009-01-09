@@ -223,7 +223,7 @@ atom_ns_fail_test()->
 required_elements_fail_test()->
 	El = {xmlelement, "entry",[{"xmlns", ?NS_ATOM}], []},
 	?assertEqual(check(El), {invalid,
-	                   "Required elements for entry are missing : id,updated,author"}).
+	                   "Required elements for entry are missing : id,updated"}).
 
 required_elements_valid_test()->
 	El = {xmlelement, "entry",[{"xmlns", ?NS_ATOM}], [
