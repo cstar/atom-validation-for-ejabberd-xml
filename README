@@ -33,3 +33,12 @@ Not everything is implemented yet. For instance :
 The EUnit unit tests should provide good coverage.
 
 sam.atom and tim.atom are sample entries from Sam Ruby and Tim Bray's atom feed. I used them for testing (check out atom:check_entry() )
+
+== License == 
+
+Licensed under the EPL
+
+== Author ==
+
+Eric Cestari <eric+atom@ohmforce.com>
+Website : http://www.cestari.info
