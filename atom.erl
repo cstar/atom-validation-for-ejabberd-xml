@@ -14,8 +14,7 @@
 
 -module(atom).
 -author('eric@ohmforce.com').
--export([check/1, check_attrs/3]).
--compile(export_all).
+-export([check/1]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
