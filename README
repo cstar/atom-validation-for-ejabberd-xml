@@ -1,6 +1,6 @@
 = atom_ejabberd =
 
-This bit of code is designed to validate pubsub atom entry payload.
+This bit of code is designed to validate pubsub (http://xmpp.org/extensions/xep-0060.html) atom (http://www.ietf.org/rfc/rfc4287.txt) entry payload.
 
 == USAGE ==
 
@@ -10,36 +10,46 @@ Payload is an ejabberd xmlelement tuple.
 
 Also included is a node_atom enforcing atom.
 
+You need to have the xml and xml_stream modules from ejabberd in your BEAM path for parsing.
+
+https://svn.process-one.net/ejabberd/trunk/src/xml_stream.erl
+https://svn.process-one.net/ejabberd/trunk/src/xml.erl
+
+== Building ==
+
+Do it manually with erlc. I may provide a build script someday.
 
 == Notes ==
 
-Initially I tried using an Atom XSD with XMErl but did not get the result I wanted (and converting to ejabberd xml terms to xmerl and back was not efficient)
-
-It only checks entries and not feeds.
+It only checks entries and not feeds. It is designed as a server component that receives entries for publishing.
 
 Namespaces should be handled well as long as atom itself is the base namespace. (no <atom:entry>)
 
 == A volontary step away from the atom spec ==
 
-I have decided not to check for atom:author, even though the entry is not in a feed, as  XMPP makes pretty clear who's actually publishing.
+I have decided not to check for atom:author, even though the entry is not in a feed, as XMPP pubsub makes it pretty clear who's actually publishing.
 
 == TODO ==
 
-Not everything is implemented yet. For instance :
-
- - No checking of cardinality of atom:person elements
+There are few bits and pieces not implemented yet. For instance :
 
  - dates are not validated
 
- - atom:source is weakly checked
+ - IRI are not checked as being valid
 
- - better handle the namespacing
+ - emails are not validated either
 
-Provide an extension hook for other namespace validations (Is anyone using atom bare these days)
+ - atom:source is weakly checked (it just accepts it as is)
+
+ - better handle the namespacing / provide an extension hook to check foreign namespaces
+
+Integrate with https://svn.process-one.net/ejabberd-modules/atom_pubsub/trunk/
+
+build script
 
 == Testing ==
 
-The EUnit unit tests should provide good coverage.
+The EUnit unit tests provide good coverage.
 
 sam.atom and tim.atom are sample entries from Sam Ruby and Tim Bray's atom feed. I used them for testing (check out atom:check_entry() )
 

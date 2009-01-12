@@ -137,7 +137,7 @@ check_attrs([{Name, _Value}|Rest], Required, Optional)->
 check1({xmlelement, "entry", _Attrs, Children}=El)->
 	Res = lists:foldl(fun(_Fun, {invalid, _E}=Error)->Error;
 					(Fun, valid)-> Fun(El)
-				end, valid, [fun check_ns/1, fun check_mandatory_els/1, fun check_content_link/1] ),
+				end, valid, [fun check_ns/1, fun check_mandatory_els/1, fun check_content_link_summary/1] ),
 	case Res of
 		valid -> check_child(Children, "entry", []);
 		Error -> Error
@@ -171,21 +171,28 @@ check_mandatory_els({xmlelement, _Name, _Attributes, SubEls})->
 		R -> {invalid, "Required elements for entry are missing : " ++ string:join(R, ",")}
 	end.
 	
-check_content_link({xmlelement, _Name, _Attributes, SubEls})->
+check_content_link_summary({xmlelement, _Name, _Attributes, SubEls})->
 	case lists:foldl(
-		fun({xmlelement, "content", _Attr, _S}, {N, M}) -> {N+1, M};
-			({xmlelement, "link", Attrs, _S}, {N, M}=Acc) ->
+		fun({xmlelement, "content", _Attr, _S}=Content, {C, L, S, Type}) -> 
+				case is_binary_type(Content) of
+					true -> {C+1, L, S, binary};
+					false -> {C+1, L, S, text}
+				end;
+			({xmlelement, "summary", _Attr, _S},{C, L, S, Type}) -> {C, L, S+1, Type};
+			({xmlelement, "link", Attrs, _S}, {C, L, S, Type}=Acc) ->
 				case xml:get_attr_s("rel", Attrs) of
-					"alternate" -> {N, M+1};
+					"alternate" -> {C, L+1, S, Type};
 					_ -> Acc
 				end;
 			(_, Acc) -> Acc
-		end, {0, 0} , SubEls) of %% {content#, altlink# }
-		{0,0} ->
+		end, {0, 0, 0, text} , SubEls) of %% {content#, altlink#, summary#, content_type }
+		{0,0,_,_} ->
 			{invalid, "Required elements : content or alternate link " };
-		{0, 1} -> valid;
-		{1, _M} -> valid;
-		{_N, _M} -> {invalid, "Only one content element allowed"}
+		{0, 1, _,_} -> valid;
+		{1, _L, 0, text} -> valid;
+		{1, _L, 1, binary} -> valid;
+		{1, _L, 0, binary} -> {invalid,"atom:content is binary, atom:summary is REQUIRED."};
+		{_C, _l, _,_} -> {invalid, "Only one content element allowed"}
 	end.
 			
 	
@@ -199,19 +206,53 @@ check_child([], _Parent, _State)->valid;
 ?CHECK_SIMPLE_1("id", "entry")
 ?CHECK_SIMPLE_1("updated", "entry")
 ?CHECK_SIMPLE_1("published", "entry")
-?CHECK_SIMPLE_ANY("name", "author")
-?CHECK_SIMPLE_ANY("uri", "author")
-?CHECK_SIMPLE_ANY("email", "author")
-?CHECK_SIMPLE_ANY("name", "contributor")
-?CHECK_SIMPLE_ANY("uri", "contributor")
-?CHECK_SIMPLE_ANY("email", "contributor")
+?CHECK_REC("source","entry", [])
 
-?CHECK_REC("author","entry", ["name"])
-?CHECK_REC("contributor","entry", ["name"])
-
-?CHECK_ATTRS("link", "entry", ["href"], ["rel", "type", "hreflang", "length"])
 ?CHECK_ATTRS("category", "entry", ["term"], ["label", "scheme"])
 
+check_child([{xmlelement, Person, Attributes, SubEls}|Rest], "entry", State) when Person == "author" orelse Person == "contributor" ->
+	case lists:foldl(fun({xmlelement, "name", _, _}, {0, U, E}) -> {1, U, E};
+						({xmlelement, "name", _, _}, {1, U, E}) -> {invalid, "Too many names for "++ Person};
+						({xmlelement, "uri", _, _}, {N, 0, E}) -> {N, 1, E};
+						({xmlelement, "uri", _, _}, {N, 1, E}) -> {invalid, "Too many URIs for "++ Person};
+						({xmlelement, "email", _, _}, {N, U, 0}) -> {N, U, 1};
+						({xmlelement, "email", _, _}, {N, U, 1}) -> {invalid, "Too many Emails for "++ Person};
+						({xmlelement, Name, Attrs, _}, Acc)->
+							case lists:member($:, Name) of 
+								true -> Acc;
+								false ->
+									case proplists:get_value("xmlns", Attrs) of
+										undefined -> {invalid, "Invalid element entry/"++Person ++"/"++Name};
+										_ -> Acc
+									end
+							end;
+						(_, _) -> {invalid, "Invalid subelements for entry/"++Person}
+					end, {0,0,0}, SubEls) of
+			{invalid, Error} -> {invalid, Error};
+			{0, _, _} -> {invalid, "Person constructs MUST contain exactly one atom:name element."};
+			_ -> valid
+	end;
+					
+
+check_child([{xmlelement, "link", Attributes, _SubEls}|Rest], "entry", State)->
+	case  check_attrs(Attributes, ["href"], ["rel", "type", "hreflang", "length"]) of
+		ok -> 
+			case proplists:get_value("rel", Attributes) of
+				"alternate" ->
+					K = {alt,
+							proplists:get_value("type", Attributes),
+							proplists:get_value("hreflang", Attributes)},
+					case proplists:get_value(K, State) of 
+						undefined -> 
+							check_child(Rest, "entry", [{K, true}|State]);
+						true -> 
+							{invalid,"atom:entry elements MUST NOT contain more than one atom:link element with a rel attribute value of alternate that has the same combination of type and hreflang attribute values."}
+					end;
+				_ -> check_child(Rest, "entry", State)
+			end;
+		{invalid, Msg} -> {invalid, "Invalid attributes for entry/link : "++ Msg}
+	end;
+	
 check_child([{xmlcdata,_SpacesOrLineFeeds}|Rest], Parent, State) -> check_child(Rest, Parent,State);
 %% Different namespace check here :
 check_child([{xmlelement, Name, Attrs, _Children}|Rest],Parent, State)->
@@ -220,6 +261,19 @@ check_child([{xmlelement, Name, Attrs, _Children}|Rest],Parent, State)->
 		_ -> {invalid, "Element " ++Parent ++"/"++ Name ++ " should not be here" }
 	end.
 
+
+is_binary_type({xmlelement, Name, Attrs, _Sub})->
+	case proplists:get_value("type", Attrs) of
+		undefined -> false;
+		Type when Type == "xhtml" orelse Type == "html" orelse Type == "text" -> false;
+		"text/" ++ _Data -> false;
+		Other ->
+			case lists:reverse(Other) of
+				"lmx+" ++ Rest -> false;
+				"lmx/" ++ Rest  -> false;
+				_ -> true
+			end
+	end.
 
 -ifdef(TEST).
 top_level_simple_test()->
@@ -320,13 +374,14 @@ rec_success_test()->
 rec_required_failed_test()->
 	El = {xmlelement, "author", [], [
 			{xmlelement, "email", [], [{xmlcdata, <<"test@example.com">>}]}]},
-	?assertEqual(check_child([El], "entry",[]), {invalid, "Required elements for entry/author are missing : name"}).
+	?assertEqual(check_child([El], "entry",[]), 		{invalid,
+			                   "Person constructs MUST contain exactly one atom:name element."}).
 
 rec_fail_test()->
 	El = {xmlelement, "author", [], [
 			{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]},
 			{xmlelement, "bademail", [], [{xmlcdata, <<"test@example.com">>}]}]},
-	?assertEqual(check_child([El], "entry",[]),  {invalid,"Element author/bademail should not be here"}).
+	?assertEqual(check_child([El], "entry",[]),  {invalid,"Invalid element entry/author/bademail"}).
 content_text_valid_test()->
 	El = {xmlelement, "content", [{"type", "text"}], [{xmlcdata, <<"toto">>}]},
 	?assertEqual(check_child([El], "entry",[]), valid).
@@ -351,7 +406,69 @@ content_mime_invalid_test()->
 	El = {xmlelement, "content", [{"type", "mime"},{"src", "http://www.google.com/"}], [{xmlcdata, "ddsf"}]},
 	?assertEqual(check_child([El], "entry",[]),  {invalid,"No src attribute entry/content"}).
 	
+double_alt_link_fail_test()->
+	Els = [{xmlelement, "link", [{"rel", "alternate"}, {"href", "lkkj"},{"type", "toto"}, {"hreflang", "fr"}], []},
+		   {xmlelement, "link", [{"rel", "alternate"}, {"href", "lkdkj"},{"type", "toto"}, {"hreflang", "fr"}], []}],
+	?assertEqual(check_child(Els, "entry",[]),  {invalid,"atom:entry elements MUST NOT contain more than one atom:link element with a rel attribute value of alternate that has the same combination of type and hreflang attribute values."}).
+
+%
+double_alt_link_success_test()->
+	Els = [{xmlelement, "link", [{"rel", "alternate"}, {"href", "lkkj"},{"type", "toto"}, {"hreflang", "en"}], []},
+		   {xmlelement, "link", [{"rel", "alternate"}, {"href", "lkdkj"},{"type", "toto"}, {"hreflang", "fr"}], []}],
+	?assertEqual(check_child(Els, "entry",[]),  valid).
+
+
+binary_content_and_no_summary_fail_test()->
+	El = {xmlelement, "entry", [], [
+		   {xmlelement, "content", [{"type", "image/png"}], []}
+		]},
+	?assertEqual(check_content_link_summary(El),  {invalid,"atom:content is binary, atom:summary is REQUIRED."}).
+
+binary_content_with_summary_test()->
+	El = {xmlelement, "entry", [], [
+		   {xmlelement, "content", [{"type", "image/png"}], []},
+		   {xmlelement, "summary", [{"type", "text"}], [{xmlcdata, <<"toto">>}]}
+		]},
+	?assertEqual(check_content_link_summary(El),  valid).
+
+
+binary1_xml_test()->
+	?assertEqual(is_binary_type({xmlelement, "content", [{"type", "application/xml"}], []}), false).
 	
+binary2_png_test()->
+	?assertEqual(is_binary_type({xmlelement, "content", [{"type", "image/png"}], []}), true).
+	
+binary3_xml_test()->
+		?assertEqual(is_binary_type({xmlelement, "content", [{"type", "text/xml"}], []}), false).
+
+binary4_xml_test()->
+		?assertEqual(is_binary_type({xmlelement, "content", [{"type", "application/html+xml"}], []}), false).
+
+binary5_xml_test()->
+		?assertEqual(is_binary_type({xmlelement, "content", [], []}), false).
+
+person_valid_test()->
+	El = {xmlelement, "author", [], [{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]}, {xmlelement, "email", [], [{xmlcdata, <<"eric@cestari.info">>}]}]},
+	?assertEqual(check_child([El], "entry",[]),  valid).
+	
+person_no_name_fail_test()->
+	El = {xmlelement, "author", [], [{xmlelement, "email", [], [{xmlcdata, <<"eric@cestari.info">>}]}]},
+	?assertEqual(check_child([El], "entry",[]),  {invalid,
+	                   "Person constructs MUST contain exactly one atom:name element."}).
+
+person_valid_ns1_test()->
+	El = {xmlelement, "author", [], [{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]},{xmlelement, "test:toto", [], []}, {xmlelement, "email", [], [{xmlcdata, <<"eric@cestari.info">>}]}]},
+	?assertEqual(check_child([El], "entry",[]),  valid).
+
+person_valid_ns2_test()->
+	El = {xmlelement, "author", [], [{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]},{xmlelement, "toto", [{"xmlns", "test"}], []}, {xmlelement, "email", [], [{xmlcdata, <<"eric@cestari.info">>}]}]},
+	?assertEqual(check_child([El], "entry",[]),  valid).
+	
+person_too_many_emails_fail_test()->
+	El = {xmlelement, "author", [], [{xmlelement, "name", [], [{xmlcdata, <<"cstar">>}]}, {xmlelement, "email", [], [{xmlcdata, <<"eric@cestari.info">>}]},{xmlelement, "email", [], [{xmlcdata, <<"eric@cestari.info">>}]}]},
+	?assertEqual(check_child([El], "entry",[]),  {invalid,"Too many Emails for author"}).
+
+
 test_entry()->
 	lists:map(fun(FName)->
 		{ok, File}=file:read_file(FName),
